@@ -1,12 +1,68 @@
-const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8787';
+export const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8787';
 
-export async function compareProduct(query, country) {
+export async function compareProduct(query, country, coords) {
   let res;
   try {
     res = await fetch(`${API_BASE}/api/compare`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ query, country }),
+      body: JSON.stringify({ query, country, lat: coords?.lat, lon: coords?.lon }),
+    });
+  } catch {
+    throw new Error(`Can't reach the backend at ${API_BASE}. Is the backend server running?`);
+  }
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(data.error || 'Request failed');
+  }
+  return data;
+}
+
+export async function getTrendingDeals(country) {
+  let res;
+  try {
+    res = await fetch(`${API_BASE}/api/trending?country=${encodeURIComponent(country)}`);
+  } catch {
+    throw new Error(`Can't reach the backend at ${API_BASE}. Is the backend server running?`);
+  }
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(data.error || 'Request failed');
+  }
+  return data;
+}
+
+export async function reverseGeocodeAddress(lat, lon) {
+  const res = await fetch(`${API_BASE}/api/geocode/reverse?lat=${lat}&lon=${lon}`);
+  if (!res.ok) throw new Error('reverse geocode failed');
+  return res.json();
+}
+
+export async function searchAddress(query) {
+  let res;
+  try {
+    res = await fetch(`${API_BASE}/api/geocode/search?q=${encodeURIComponent(query)}`);
+  } catch {
+    throw new Error(`Can't reach the backend at ${API_BASE}.`);
+  }
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || 'Address search failed');
+  return data.suggestions;
+}
+
+export async function sendBrookMessage(messages, { country, coords, savedDealsSummary } = {}) {
+  let res;
+  try {
+    res = await fetch(`${API_BASE}/api/brook/chat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        messages,
+        country,
+        lat: coords?.lat,
+        lon: coords?.lon,
+        savedDealsSummary,
+      }),
     });
   } catch {
     throw new Error(`Can't reach the backend at ${API_BASE}. Is the backend server running?`);

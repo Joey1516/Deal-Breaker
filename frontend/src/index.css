@@ -1,8 +1,10 @@
 :root {
+  /* Palette referenced from ahavainfotech.com: navy (#1A4570) + crimson (#BD1F53),
+     brightened here for visibility as glowing accents on a dark background. */
   --text: rgba(255, 255, 255, 0.72);
   --text-h: #ffffff;
-  --accent: #b565ff;
-  --accent-2: #4fd1ff;
+  --accent: #d9315f;
+  --accent-2: #3f7fc4;
   --good: #3ee9a0;
   --danger: #ff6b81;
 
@@ -13,12 +15,50 @@
   --blur: 18px;
   --radius: 18px;
 
+  --surface: rgba(255, 255, 255, 0.06);
+  --surface-strong: rgba(255, 255, 255, 0.12);
+  --placeholder: rgba(255, 255, 255, 0.4);
+
+  --body-bg:
+    radial-gradient(at 15% 15%, rgba(217, 49, 95, 0.5), transparent 55%),
+    radial-gradient(at 85% 10%, rgba(63, 127, 196, 0.5), transparent 55%),
+    radial-gradient(at 10% 85%, rgba(189, 31, 83, 0.35), transparent 55%),
+    radial-gradient(at 85% 90%, rgba(26, 69, 112, 0.45), transparent 55%),
+    linear-gradient(160deg, #0c1220 0%, #16223a 45%, #1a1425 100%);
+
   --sans: system-ui, 'Segoe UI', Roboto, sans-serif;
 
   font: 16px/145% var(--sans);
   color-scheme: dark;
   color: var(--text);
   -webkit-font-smoothing: antialiased;
+}
+
+:root[data-theme='light'] {
+  --text: rgba(20, 20, 35, 0.68);
+  --text-h: #16163f;
+  --accent: #bd1f53;
+  --accent-2: #1a4570;
+  --good: #16a34a;
+  --danger: #e11d48;
+
+  --glass-bg: rgba(255, 255, 255, 0.55);
+  --glass-bg-strong: rgba(255, 255, 255, 0.75);
+  --glass-border: rgba(20, 20, 35, 0.12);
+  --glass-shadow: 0 8px 32px rgba(26, 69, 112, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.6);
+
+  --surface: rgba(20, 20, 35, 0.04);
+  --surface-strong: rgba(20, 20, 35, 0.08);
+  --placeholder: rgba(20, 20, 35, 0.35);
+
+  --body-bg:
+    radial-gradient(at 15% 15%, rgba(189, 31, 83, 0.16), transparent 55%),
+    radial-gradient(at 85% 10%, rgba(26, 69, 112, 0.16), transparent 55%),
+    radial-gradient(at 10% 85%, rgba(189, 31, 83, 0.12), transparent 55%),
+    radial-gradient(at 85% 90%, rgba(26, 69, 112, 0.14), transparent 55%),
+    linear-gradient(160deg, #f9f7fa 0%, #f1f3f7 45%, #eef2f6 100%);
+
+  color-scheme: light;
 }
 
 * {
@@ -31,18 +71,36 @@ html, body {
 
 body {
   margin: 0;
-  background:
-    radial-gradient(at 15% 15%, rgba(181, 101, 255, 0.55), transparent 55%),
-    radial-gradient(at 85% 10%, rgba(79, 209, 255, 0.45), transparent 55%),
-    radial-gradient(at 10% 85%, rgba(255, 107, 129, 0.4), transparent 55%),
-    radial-gradient(at 85% 90%, rgba(62, 233, 160, 0.35), transparent 55%),
-    linear-gradient(160deg, #120e26 0%, #1b1440 45%, #0d1b3a 100%);
+  background: var(--body-bg);
   background-attachment: fixed;
+  transition: background 0.2s ease;
 }
 
 h1, h2, h3 {
   color: var(--text-h);
   font-weight: 600;
+}
+
+::selection {
+  background: rgba(181, 101, 255, 0.35);
+  color: var(--text-h);
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--surface-strong);
+  border-radius: 999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--glass-border);
 }
 
 /* Reusable glass surface */
