@@ -7,6 +7,7 @@ import logoImg from './assets/logo.png';
 import LocationMapPicker from './components/LocationMapPicker';
 import IntroVideo from './components/IntroVideo';
 import BrookAssistant from './components/BrookAssistant';
+import PricingPage from './components/PricingPage';
 import './App.css';
 
 function IconBrook() {
@@ -198,6 +199,7 @@ function GoogleIcon() {
 
 function AuthPage({ mode, onSwitchMode, onSubmit, onGoogleAuth, onBack, theme, onToggleTheme }) {
   const isSignup = mode === 'signup';
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [passwordError, setPasswordError] = useState(null);
@@ -209,7 +211,7 @@ function AuthPage({ mode, onSwitchMode, onSubmit, onGoogleAuth, onBack, theme, o
       return;
     }
     setPasswordError(null);
-    onSubmit(e);
+    onSubmit(e, email);
   }
 
   return (
@@ -251,7 +253,13 @@ function AuthPage({ mode, onSwitchMode, onSubmit, onGoogleAuth, onBack, theme, o
             )}
             <label className="auth-field">
               <span>Email</span>
-              <input type="email" placeholder="you@example.com" required />
+              <input
+                type="email"
+                placeholder="you@example.com"
+                required
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+              />
             </label>
             <label className="auth-field">
               <span>Password</span>
@@ -351,6 +359,15 @@ export default function App() {
   const [wakeArmed, setWakeArmed] = useState(false);
   const [brookInlineStatus, setBrookInlineStatus] = useState(null); // null | 'listening' | 'thinking'
   const [brookInlineReply, setBrookInlineReply] = useState(null);
+  const [currentUserEmail, setCurrentUserEmail] = useState(() => localStorage.getItem('dealbreaker-current-email') || null);
+  const [searchCounts, setSearchCounts] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem('dealbreaker-search-counts') || '{}');
+    } catch {
+      return {};
+    }
+  });
+  const [showLimitModal, setShowLimitModal] = useState(false);
   const recognitionRef = useRef(null);
   const wakeControllerRef = useRef(null);
   const wakeArmedRef = useRef(false);
@@ -373,10 +390,38 @@ export default function App() {
     localStorage.setItem('dealbreaker-brook-messages', JSON.stringify(brookMessages));
   }, [brookMessages]);
 
+  useEffect(() => {
+    if (currentUserEmail) localStorage.setItem('dealbreaker-current-email', currentUserEmail);
+  }, [currentUserEmail]);
+
+  useEffect(() => {
+    localStorage.setItem('dealbreaker-search-counts', JSON.stringify(searchCounts));
+  }, [searchCounts]);
+
+  // Free tier is capped per account (keyed by the email used to sign in), not by time —
+  // this only lives in the browser today since there's no real backend user database
+  // yet, so it's an honest, bypassable-by-clearing-storage limit, not a secure one.
+  const SEARCH_LIMIT = 5;
+
+  function hasReachedSearchLimit() {
+    if (!currentUserEmail) return false;
+    return (searchCounts[currentUserEmail] || 0) >= SEARCH_LIMIT;
+  }
+
+  function recordSearchUsage() {
+    if (!currentUserEmail) return;
+    setSearchCounts((prev) => ({ ...prev, [currentUserEmail]: (prev[currentUserEmail] || 0) + 1 }));
+  }
+
   async function handleBrookSend(text) {
+    if (hasReachedSearchLimit()) {
+      setShowLimitModal(true);
+      return null;
+    }
     const trimmed = text?.trim();
     if (!trimmed) return null;
 
+    recordSearchUsage();
     const nextMessages = [...brookMessages, { role: 'user', content: trimmed }];
     setBrookMessages(nextMessages);
     setBrookLoading(true);
@@ -561,6 +606,11 @@ export default function App() {
   async function runSearch(searchQuery) {
     const q = (searchQuery ?? query).trim();
     if (!q) return;
+    if (hasReachedSearchLimit()) {
+      setShowLimitModal(true);
+      return;
+    }
+    recordSearchUsage();
     setLoading(true);
     setError(null);
     setResults([]);
@@ -603,12 +653,16 @@ export default function App() {
 
   const activeNavItem = NAV_ITEMS.find((item) => item.key === activeTab);
 
-  function handleAuthSubmit(e) {
+  function handleAuthSubmit(e, email) {
     e.preventDefault();
+    setCurrentUserEmail(email.trim().toLowerCase());
     setView('app');
   }
 
   function handleGoogleAuth() {
+    // Mock OAuth has no real account behind it — every "Google" sign-in shares one
+    // bucket, since there's no real Google identity to key the search limit on.
+    setCurrentUserEmail('google-authenticated-user');
     setView('app');
   }
 
@@ -728,6 +782,10 @@ export default function App() {
             onClear={handleBrookClear}
           />
         </main>
+      ) : activeTab === 'upgrade' ? (
+        <main className="app pricing-main">
+          <PricingPage onBack={() => setActiveTab('search')} />
+        </main>
       ) : activeTab !== 'search' ? (
         <main className="app">
           <div className="placeholder-card">
@@ -796,6 +854,34 @@ export default function App() {
           onConfirm={handleMapConfirm}
           onClose={() => setShowMapPicker(false)}
         />
+      )}
+
+      {showLimitModal && (
+        <div className="map-modal-overlay" onClick={() => setShowLimitModal(false)}>
+          <div className="limit-modal glass" onClick={(e) => e.stopPropagation()}>
+            <div className="limit-modal-icon">🔒</div>
+            <h2>You've reached your free search limit</h2>
+            <p>
+              Free accounts get {SEARCH_LIMIT} searches. Upgrade to Pro for unlimited price comparisons and
+              unlimited conversations with Brook.
+            </p>
+            <div className="limit-modal-actions">
+              <button
+                type="button"
+                className="btn-primary"
+                onClick={() => {
+                  setShowLimitModal(false);
+                  setActiveTab('upgrade');
+                }}
+              >
+                Upgrade to Pro
+              </button>
+              <button type="button" className="btn-ghost" onClick={() => setShowLimitModal(false)}>
+                Maybe later
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {error && <div className="error">{error}</div>}
