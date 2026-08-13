@@ -1,11 +1,47 @@
 import express from 'express';
 import cors from 'cors';
+import helmet from 'helmet';
+import rateLimit from 'express-rate-limit';
 import Anthropic from '@anthropic-ai/sdk';
 import 'dotenv/config';
 
 const app = express();
-app.use(cors());
-app.use(express.json());
+
+// Standard HTTP security headers (X-Content-Type-Options, X-Frame-Options,
+// Strict-Transport-Security, etc.) — cheap, no downside for a JSON-only API.
+app.use(helmet());
+
+// Only these origins may call the API from a browser. CORS is enforced by browsers,
+// not a real access-control layer (curl/scripts ignore it entirely) — rate limiting
+// below is what actually protects the backend from direct abuse. This just stops
+// *other websites* from using a visitor's browser to spend your Apify/Anthropic budget.
+const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || 'http://localhost:5180,http://localhost:5173')
+  .split(',')
+  .map((o) => o.trim())
+  .filter(Boolean);
+
+app.use(
+  cors({
+    origin: (origin, callback) => {
+      // No Origin header = curl, server-to-server, non-browser clients — not a CORS concern.
+      if (!origin || ALLOWED_ORIGINS.includes(origin)) {
+        callback(null, true);
+      } else {
+        callback(new Error('Not allowed by CORS'));
+      }
+    },
+  })
+);
+// Explicit cap (Express's own default is already conservative, but pinning it here
+// means it can't silently change with a future Express upgrade) — bounds the request
+// body an attacker can throw at the JSON parser, and caps how much conversation
+// history Brook is billed to process in one call.
+app.use(express.json({ limit: '200kb' }));
+
+// Generous limit for cheap/free endpoints (geocoding), strict limit for anything that
+// spends real money per request (Apify search, Anthropic chat).
+const standardLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 60, standardHeaders: true, legacyHeaders: false });
+const costlyLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 20, standardHeaders: true, legacyHeaders: false });
 
 const APIFY_TOKEN = process.env.APIFY_TOKEN;
 const ACTOR_ID = 'johnvc~google-shopping-api-google-shopping-products-prices-deals';
@@ -127,6 +163,16 @@ function toRad(deg) {
   return (deg * Math.PI) / 180;
 }
 
+// lat/lon are optional on most routes (precise location may not be available) but
+// must be genuine coordinates when present — never an arbitrary string passed through
+// to downstream calculations or the Nominatim proxy.
+function isValidCoordPair(lat, lon) {
+  if (lat == null && lon == null) return true;
+  const latNum = Number(lat);
+  const lonNum = Number(lon);
+  return Number.isFinite(latNum) && Number.isFinite(lonNum) && Math.abs(latNum) <= 90 && Math.abs(lonNum) <= 180;
+}
+
 function haversineMiles(lat1, lon1, lat2, lon2) {
   const dLat = toRad(lat2 - lat1);
   const dLon = toRad(lon2 - lon1);
@@ -212,11 +258,20 @@ async function getComparisonCached(query, country, language) {
   return { payload, cached: false };
 }
 
-app.post('/api/compare', async (req, res) => {
+app.post('/api/compare', costlyLimiter, async (req, res) => {
   const { query, country = 'us', language = 'en', lat, lon } = req.body;
 
-  if (!query || !query.trim()) {
+  if (!query || typeof query !== 'string' || !query.trim()) {
     return res.status(400).json({ error: 'query is required' });
+  }
+  if (query.length > 200) {
+    return res.status(400).json({ error: 'query is too long' });
+  }
+  if (typeof country !== 'string' || !/^[a-z]{2}$/i.test(country)) {
+    return res.status(400).json({ error: 'country must be a 2-letter code' });
+  }
+  if (!isValidCoordPair(lat, lon)) {
+    return res.status(400).json({ error: 'lat/lon must be valid coordinates or omitted' });
   }
   if (!APIFY_TOKEN) {
     return res.status(500).json({ error: 'Server is missing APIFY_TOKEN. Add it to backend/.env' });
@@ -227,8 +282,8 @@ app.post('/api/compare', async (req, res) => {
     const annotated = await annotateWithDistance(payload, lat, lon, country);
     res.json({ ...annotated, cached });
   } catch (err) {
-    console.error(err);
-    res.status(502).json({ error: 'Price lookup failed', detail: err.message });
+    console.error('[compare]', err);
+    res.status(502).json({ error: 'Price lookup failed. Please try again.' });
   }
 });
 
@@ -247,7 +302,7 @@ const TRENDING_QUERIES = [
 const TRENDING_CACHE_TTL_MS = 45 * 60 * 1000;
 const trendingCache = new Map();
 
-app.get('/api/trending', async (req, res) => {
+app.get('/api/trending', costlyLimiter, async (req, res) => {
   const country = req.query.country || 'us';
   const language = req.query.language || 'en';
 
@@ -274,8 +329,8 @@ app.get('/api/trending', async (req, res) => {
     trendingCache.set(cacheKey, { data: payload, time: Date.now() });
     res.json(payload);
   } catch (err) {
-    console.error(err);
-    res.status(502).json({ error: 'Trending deals lookup failed', detail: err.message });
+    console.error('[trending]', err);
+    res.status(502).json({ error: 'Trending deals lookup failed. Please try again.' });
   }
 });
 
@@ -296,10 +351,13 @@ async function nominatimFetch(url) {
   return res.json();
 }
 
-app.get('/api/geocode/reverse', async (req, res) => {
+app.get('/api/geocode/reverse', standardLimiter, async (req, res) => {
   const { lat, lon } = req.query;
   if (!lat || !lon) {
     return res.status(400).json({ error: 'lat and lon are required' });
+  }
+  if (!isValidCoordPair(lat, lon)) {
+    return res.status(400).json({ error: 'lat/lon must be valid coordinates' });
   }
   try {
     const data = await nominatimFetch(
@@ -317,14 +375,18 @@ app.get('/api/geocode/reverse', async (req, res) => {
       houseNumber: address.house_number ?? null,
     });
   } catch (err) {
-    res.status(502).json({ error: 'Reverse geocoding failed', detail: err.message });
+    console.error('[geocode/reverse]', err);
+    res.status(502).json({ error: 'Reverse geocoding failed. Please try again.' });
   }
 });
 
-app.get('/api/geocode/search', async (req, res) => {
+app.get('/api/geocode/search', standardLimiter, async (req, res) => {
   const q = req.query.q;
-  if (!q || !q.trim()) {
+  if (!q || typeof q !== 'string' || !q.trim()) {
     return res.status(400).json({ error: 'q is required' });
+  }
+  if (q.length > 200) {
+    return res.status(400).json({ error: 'q is too long' });
   }
   try {
     const data = await nominatimFetch(
@@ -339,7 +401,8 @@ app.get('/api/geocode/search', async (req, res) => {
       })),
     });
   } catch (err) {
-    res.status(502).json({ error: 'Address search failed', detail: err.message });
+    console.error('[geocode/search]', err);
+    res.status(502).json({ error: 'Address search failed. Please try again.' });
   }
 });
 
@@ -372,11 +435,31 @@ const SEARCH_PRICES_TOOL = {
 
 const MAX_TOOL_ROUNDS = 4;
 
-app.post('/api/brook/chat', async (req, res) => {
+app.post('/api/brook/chat', costlyLimiter, async (req, res) => {
   const { messages, country = 'us', language = 'en', lat, lon, savedDealsSummary } = req.body;
 
   if (!Array.isArray(messages) || messages.length === 0) {
     return res.status(400).json({ error: 'messages array is required' });
+  }
+  // Bounds on conversation size/shape: a malicious or buggy client could otherwise
+  // send an enormous history and rack up real Anthropic token costs in one request.
+  if (messages.length > 40) {
+    return res.status(400).json({ error: 'Conversation is too long — please start a new chat.' });
+  }
+  const validMessages = messages.every(
+    (m) => m && (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string' && m.content.length <= 4000
+  );
+  if (!validMessages) {
+    return res.status(400).json({ error: 'Invalid message format' });
+  }
+  if (typeof country !== 'string' || !/^[a-z]{2}$/i.test(country)) {
+    return res.status(400).json({ error: 'country must be a 2-letter code' });
+  }
+  if (!isValidCoordPair(lat, lon)) {
+    return res.status(400).json({ error: 'lat/lon must be valid coordinates or omitted' });
+  }
+  if (savedDealsSummary != null && (typeof savedDealsSummary !== 'string' || savedDealsSummary.length > 2000)) {
+    return res.status(400).json({ error: 'savedDealsSummary is invalid' });
   }
   if (!anthropic) {
     return res.status(500).json({ error: 'Server is missing ANTHROPIC_API_KEY. Add it to backend/.env' });
@@ -438,12 +521,23 @@ app.post('/api/brook/chat', async (req, res) => {
       bestDeal: searchResults?.bestDeal ?? null,
     });
   } catch (err) {
-    console.error(err);
-    res.status(502).json({ error: 'Brook is having trouble responding', detail: err.message });
+    console.error('[brook/chat]', err);
+    res.status(502).json({ error: 'Brook is having trouble responding right now. Please try again.' });
   }
 });
 
 app.get('/api/health', (_req, res) => res.json({ ok: true }));
+
+// Catches anything that reaches here uncaught — including CORS rejections, which
+// Express's own default handler would otherwise answer with a full stack trace
+// (file paths, dependency internals) instead of a clean JSON response.
+app.use((err, req, res, _next) => {
+  console.error('[unhandled]', err);
+  if (res.headersSent) return;
+  const status = err.message === 'Not allowed by CORS' ? 403 : 500;
+  const message = status === 403 ? 'This origin is not allowed to access the API.' : 'Something went wrong.';
+  res.status(status).json({ error: message });
+});
 
 const PORT = process.env.PORT || 8787;
 app.listen(PORT, () => console.log(`Backend listening on http://localhost:${PORT}`));
