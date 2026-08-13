@@ -715,6 +715,8 @@ export default function App() {
               key={key}
               className={`nav-item ${activeTab === key ? 'active' : ''} ${cta ? 'nav-cta' : ''}`}
               onClick={() => setActiveTab(key)}
+              aria-label={label}
+              title={label}
             >
               <Icon />
               <span>{label}</span>
