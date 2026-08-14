@@ -2022,10 +2022,11 @@ header h1 {
 }
 
 .pricing-card-price {
-  font-size: 40px;
+  font-size: 34px;
   font-weight: 800;
   color: var(--text-h);
   margin: 8px 0 4px;
+  overflow-wrap: break-word;
 }
 
 .pricing-card-price span {

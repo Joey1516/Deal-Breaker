@@ -1,5 +1,27 @@
 import { useState } from 'react';
 
+// Fixed approximate USD conversion rates for display only — billing isn't live yet
+// (see the footnote below), so there's no live FX rate feed wired up. Locale controls
+// number grouping/symbol placement (e.g. ₹87,00 vs 87,00 €), currency controls the
+// actual unit (and its native decimal digits — Intl handles JPY's 0 decimals itself).
+const COUNTRY_CURRENCY = {
+  us: { currency: 'USD', locale: 'en-US', rate: 1 },
+  gb: { currency: 'GBP', locale: 'en-GB', rate: 0.79 },
+  in: { currency: 'INR', locale: 'en-IN', rate: 87 },
+  ca: { currency: 'CAD', locale: 'en-CA', rate: 1.37 },
+  au: { currency: 'AUD', locale: 'en-AU', rate: 1.52 },
+  de: { currency: 'EUR', locale: 'de-DE', rate: 0.92 },
+  fr: { currency: 'EUR', locale: 'fr-FR', rate: 0.92 },
+  ae: { currency: 'AED', locale: 'en-AE', rate: 3.67 },
+  sg: { currency: 'SGD', locale: 'en-SG', rate: 1.34 },
+  jp: { currency: 'JPY', locale: 'ja-JP', rate: 149 },
+};
+
+function formatPrice(usdAmount, country) {
+  const { currency, locale, rate } = COUNTRY_CURRENCY[country] || COUNTRY_CURRENCY.us;
+  return new Intl.NumberFormat(locale, { style: 'currency', currency }).format(usdAmount * rate);
+}
+
 function IconCheck() {
   return (
     <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -31,13 +53,14 @@ const PREMIUM_FEATURES = [
   'Family sharing for up to 5 people',
 ];
 
-export default function PricingPage({ onBack }) {
+export default function PricingPage({ onBack, country }) {
   const [billing, setBilling] = useState('monthly');
   const [upgradeMessage, setUpgradeMessage] = useState(null);
 
   const prices = {
-    pro: billing === 'monthly' ? '$9.99' : '$7.99',
-    premium: billing === 'monthly' ? '$19.99' : '$15.99',
+    free: formatPrice(0, country),
+    pro: formatPrice(billing === 'monthly' ? 9.99 : 7.99, country),
+    premium: formatPrice(billing === 'monthly' ? 19.99 : 15.99, country),
   };
   const period = billing === 'monthly' ? '/month' : '/month, billed yearly';
 
@@ -79,7 +102,8 @@ export default function PricingPage({ onBack }) {
         <div className="pricing-card">
           <div className="pricing-card-name">Free</div>
           <div className="pricing-card-price">
-            $0<span>/month</span>
+            {prices.free}
+            <span>/month</span>
           </div>
           <p className="pricing-card-desc">For trying Deal Breaker out.</p>
           <button className="btn-ghost pricing-cta" disabled>
@@ -142,7 +166,10 @@ export default function PricingPage({ onBack }) {
 
       {upgradeMessage && <div className="pricing-message">{upgradeMessage}</div>}
 
-      <p className="pricing-footnote">Prices shown are illustrative and may change before billing launches.</p>
+      <p className="pricing-footnote">
+        Prices shown are illustrative, converted to your local currency at approximate rates, and may change before
+        billing launches.
+      </p>
     </div>
   );
 }

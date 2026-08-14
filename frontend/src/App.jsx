@@ -1077,7 +1077,7 @@ export default function App() {
         </main>
       ) : activeTab === 'upgrade' ? (
         <main className="app pricing-main">
-          <PricingPage onBack={() => setActiveTab('search')} />
+          <PricingPage onBack={() => setActiveTab('search')} country={country} />
         </main>
       ) : activeTab === 'profile' ? (
         <main className="app">
