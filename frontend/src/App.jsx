@@ -136,7 +136,7 @@ const CATEGORIES = [
   { label: 'Fitness', emoji: '🏋️', query: 'dumbbell set' },
 ];
 
-function LandingPage({ onStartTrial, onSignIn, theme, onToggleTheme }) {
+function LandingPage({ onStartTrial, onSignIn, theme, onToggleTheme, onOpenPrivacy, onOpenTerms }) {
   return (
     <div className="landing">
       <nav className="landing-nav">
@@ -170,6 +170,14 @@ function LandingPage({ onStartTrial, onSignIn, theme, onToggleTheme }) {
         </div>
         <p className="fine-print">No credit card required · Cancel anytime</p>
       </div>
+
+      <footer className="landing-footer">
+        <span>© {new Date().getFullYear()} Ahava Infotech Solutions</span>
+        <span className="landing-footer-links">
+          <button onClick={onOpenPrivacy}>Privacy Policy</button>
+          <button onClick={onOpenTerms}>Terms of Service</button>
+        </span>
+      </footer>
     </div>
   );
 }
@@ -321,6 +329,241 @@ function AuthPage({ mode, onSwitchMode, onSubmit, onGoogleAuth, onBack, theme, o
   );
 }
 
+function formatRelativeTime(timestamp) {
+  const diffMs = Date.now() - timestamp;
+  const diffMin = Math.round(diffMs / 60000);
+  if (diffMin < 1) return 'Just now';
+  if (diffMin < 60) return `${diffMin}m ago`;
+  const diffHr = Math.round(diffMin / 60);
+  if (diffHr < 24) return `${diffHr}h ago`;
+  const diffDay = Math.round(diffHr / 24);
+  if (diffDay < 7) return `${diffDay}d ago`;
+  return new Date(timestamp).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+function ProfileView({
+  email,
+  plan,
+  usedSearches,
+  searchLimit,
+  savedCount,
+  historyCount,
+  onUpgrade,
+  onSignOut,
+  onOpenPrivacy,
+  onOpenTerms,
+}) {
+  const pct = Math.min(100, Math.round((usedSearches / searchLimit) * 100));
+  const initial = (email || '?').charAt(0).toUpperCase();
+  return (
+    <div className="profile-card">
+      <div className="profile-avatar">{initial}</div>
+      <h2 className="profile-email">{email}</h2>
+      <span className="profile-plan-badge">{plan} plan</span>
+
+      <div className="profile-usage">
+        <div className="profile-usage-row">
+          <span>Free searches used</span>
+          <span>
+            {usedSearches} / {searchLimit}
+          </span>
+        </div>
+        <div className="usage-bar">
+          <div className="usage-bar-fill" style={{ width: `${pct}%` }} />
+        </div>
+      </div>
+
+      <div className="profile-stats">
+        <div className="profile-stat">
+          <span className="profile-stat-value">{savedCount}</span>
+          <span className="profile-stat-label">Saved deals</span>
+        </div>
+        <div className="profile-stat">
+          <span className="profile-stat-value">{historyCount}</span>
+          <span className="profile-stat-label">Searches made</span>
+        </div>
+      </div>
+
+      <button className="btn-primary profile-upgrade-btn" onClick={onUpgrade}>
+        Upgrade to Pro
+      </button>
+      <button className="back-link profile-signout" onClick={onSignOut}>
+        Sign out
+      </button>
+
+      <div className="profile-legal-links">
+        <button onClick={onOpenPrivacy}>Privacy Policy</button>
+        <button onClick={onOpenTerms}>Terms of Service</button>
+      </div>
+    </div>
+  );
+}
+
+function HistoryView({ history, onRerun, onClear }) {
+  if (history.length === 0) {
+    return (
+      <div className="placeholder-card">
+        <div className="placeholder-icon">
+          <IconClock />
+        </div>
+        <h2>No searches yet</h2>
+        <p>Your recent price comparisons will show up here.</p>
+      </div>
+    );
+  }
+  return (
+    <>
+      <div className="history-toolbar">
+        <button className="back-link" onClick={onClear}>
+          Clear history
+        </button>
+      </div>
+      <div className="history-list">
+        {history.map((h, i) => (
+          <button className="history-item" key={i} onClick={() => onRerun(h.query)}>
+            <div className="history-item-main">
+              <span className="history-item-query">{h.query}</span>
+              <span className="history-item-meta">
+                {formatRelativeTime(h.timestamp)} · {h.resultCount} result{h.resultCount === 1 ? '' : 's'}
+              </span>
+            </div>
+            {h.bestPrice && (
+              <div className="history-item-price">
+                {h.bestPrice}
+                {h.bestStore && <span className="history-item-store"> at {h.bestStore}</span>}
+              </div>
+            )}
+          </button>
+        ))}
+      </div>
+    </>
+  );
+}
+
+const LEGAL_UPDATED = 'August 13, 2026';
+
+function LegalPage({ kind, onBack, theme, onToggleTheme }) {
+  const isPrivacy = kind === 'privacy';
+  return (
+    <div className="landing">
+      <div className="auth-topbar">
+        <ThemeToggle theme={theme} onToggle={onToggleTheme} />
+      </div>
+      <div className="legal-page">
+        <button className="back-link" onClick={onBack}>
+          ← Back to home
+        </button>
+        <h1>{isPrivacy ? 'Privacy Policy' : 'Terms of Service'}</h1>
+        <p className="legal-updated">Last updated: {LEGAL_UPDATED}</p>
+        {isPrivacy ? <PrivacyContent /> : <TermsContent />}
+      </div>
+    </div>
+  );
+}
+
+function PrivacyContent() {
+  return (
+    <>
+      <p>
+        Deal Breaker is a product of Ahava Infotech Solutions ("we", "us"). This page explains what information the
+        app collects and how it's used.
+      </p>
+
+      <h2>Information we collect</h2>
+      <ul>
+        <li>The email address you enter when you sign up or log in.</li>
+        <li>Your approximate or precise location, only if you allow it, to show nearby stores and distances.</li>
+        <li>The product searches you run, your saved deals, and your search history.</li>
+        <li>Messages you send to the Brook AI assistant.</li>
+      </ul>
+      <p>
+        Today, this account and activity data is stored only in your browser's local storage — there is no server-side
+        account database yet. Clearing your browser data or switching devices will erase it.
+      </p>
+
+      <h2>How we use it</h2>
+      <ul>
+        <li>To run price comparisons and show you results across stores.</li>
+        <li>To power the Brook AI assistant's replies to your questions.</li>
+        <li>To rank nearby stores by distance when location access is granted.</li>
+      </ul>
+
+      <h2>Third-party services</h2>
+      <p>Search queries and location data pass through the following third parties to make the app work:</p>
+      <ul>
+        <li>Apify — sources live product and price listings.</li>
+        <li>Anthropic — powers the Brook AI assistant's responses.</li>
+        <li>OpenStreetMap Nominatim — converts addresses and coordinates for location features.</li>
+      </ul>
+      <p>Each processes the data you send them under their own privacy policies.</p>
+
+      <h2>Cookies &amp; tracking</h2>
+      <p>Deal Breaker does not use advertising or cross-site tracking cookies.</p>
+
+      <h2>Your choices</h2>
+      <ul>
+        <li>You can deny location and microphone permissions — the app still works with typed searches.</li>
+        <li>You can clear your saved deals, history, and session at any time by clearing your browser's site data.</li>
+      </ul>
+
+      <h2>Children's privacy</h2>
+      <p>Deal Breaker is not directed at children under 13.</p>
+
+      <h2>Changes to this policy</h2>
+      <p>We'll update this page if what we collect or how we use it changes.</p>
+
+      <h2>Contact</h2>
+      <p>Questions about this policy can be directed to Ahava Infotech Solutions.</p>
+    </>
+  );
+}
+
+function TermsContent() {
+  return (
+    <>
+      <p>By using Deal Breaker, you agree to these terms.</p>
+
+      <h2>The service</h2>
+      <p>
+        Deal Breaker helps you compare product prices across stores and chat with the Brook AI assistant. Results are
+        sourced from third-party data providers — prices, availability, and store details can be out of date or
+        inaccurate. Always confirm the price and availability on the retailer's own site before buying.
+      </p>
+
+      <h2>Accounts</h2>
+      <p>
+        You're responsible for the activity that happens under the email you sign in with. Paid plans referenced in
+        the app (Pro, Premium) are not yet available for purchase — no payment is currently collected, and upgrading
+        has no effect beyond a confirmation message.
+      </p>
+
+      <h2>Acceptable use</h2>
+      <p>
+        Don't use Deal Breaker to abuse, scrape at scale, or interfere with the service, and don't attempt to
+        circumvent search limits through automated means.
+      </p>
+
+      <h2>Disclaimer of warranties</h2>
+      <p>
+        The service is provided "as is," without warranties of any kind. We don't guarantee that prices, deals, or
+        Brook's responses are accurate, complete, or current.
+      </p>
+
+      <h2>Limitation of liability</h2>
+      <p>
+        Ahava Infotech Solutions is not liable for purchasing decisions made based on information shown in Deal
+        Breaker, or for losses arising from use of the service.
+      </p>
+
+      <h2>Changes</h2>
+      <p>We may update these terms as the service evolves. Continued use after changes means you accept them.</p>
+
+      <h2>Contact</h2>
+      <p>Questions about these terms can be directed to Ahava Infotech Solutions.</p>
+    </>
+  );
+}
+
 export default function App() {
   const [theme, setTheme] = useState(() => localStorage.getItem('dealbreaker-theme') || 'dark');
   const [view, setView] = useState('intro');
@@ -342,6 +585,13 @@ export default function App() {
   const [savedDeals, setSavedDeals] = useState(() => {
     try {
       return JSON.parse(localStorage.getItem('dealbreaker-saved') || '[]');
+    } catch {
+      return [];
+    }
+  });
+  const [searchHistory, setSearchHistory] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem('dealbreaker-search-history') || '[]');
     } catch {
       return [];
     }
@@ -387,6 +637,10 @@ export default function App() {
   }, [savedDeals]);
 
   useEffect(() => {
+    localStorage.setItem('dealbreaker-search-history', JSON.stringify(searchHistory));
+  }, [searchHistory]);
+
+  useEffect(() => {
     localStorage.setItem('dealbreaker-brook-messages', JSON.stringify(brookMessages));
   }, [brookMessages]);
 
@@ -411,6 +665,23 @@ export default function App() {
   function recordSearchUsage() {
     if (!currentUserEmail) return;
     setSearchCounts((prev) => ({ ...prev, [currentUserEmail]: (prev[currentUserEmail] || 0) + 1 }));
+  }
+
+  const MAX_HISTORY = 50;
+
+  function recordSearchHistory(entry) {
+    setSearchHistory((prev) => [entry, ...prev].slice(0, MAX_HISTORY));
+  }
+
+  function clearSearchHistory() {
+    setSearchHistory([]);
+  }
+
+  function handleSignOut() {
+    setCurrentUserEmail(null);
+    localStorage.removeItem('dealbreaker-current-email');
+    setActiveTab('search');
+    setView('landing');
   }
 
   async function handleBrookSend(text) {
@@ -621,6 +892,13 @@ export default function App() {
       setBestDeal(data.bestDeal);
       setFromCache(!!data.cached);
       speak(describeBestDeal(data.bestDeal, data.resultCount));
+      recordSearchHistory({
+        query: q,
+        timestamp: Date.now(),
+        resultCount: data.resultCount ?? data.results?.length ?? 0,
+        bestPrice: data.bestDeal?.displayPrice ?? null,
+        bestStore: data.bestDeal?.store ?? null,
+      });
     } catch (err) {
       setError(err.message);
       speak('Sorry, something went wrong while comparing prices.');
@@ -683,6 +961,19 @@ export default function App() {
           setAuthMode('login');
           setView('auth');
         }}
+        onOpenPrivacy={() => setView('privacy')}
+        onOpenTerms={() => setView('terms')}
+      />
+    );
+  }
+
+  if (view === 'privacy' || view === 'terms') {
+    return (
+      <LegalPage
+        kind={view}
+        theme={theme}
+        onToggleTheme={toggleTheme}
+        onBack={() => setView(currentUserEmail ? 'app' : 'landing')}
       />
     );
   }
@@ -787,6 +1078,41 @@ export default function App() {
       ) : activeTab === 'upgrade' ? (
         <main className="app pricing-main">
           <PricingPage onBack={() => setActiveTab('search')} />
+        </main>
+      ) : activeTab === 'profile' ? (
+        <main className="app">
+          <header>
+            <h1>Profile</h1>
+            <p className="tagline">Your account and usage at a glance.</p>
+          </header>
+          <ProfileView
+            email={currentUserEmail}
+            plan="Free"
+            usedSearches={searchCounts[currentUserEmail] || 0}
+            searchLimit={SEARCH_LIMIT}
+            savedCount={savedDeals.length}
+            historyCount={searchHistory.length}
+            onUpgrade={() => setActiveTab('upgrade')}
+            onSignOut={handleSignOut}
+            onOpenPrivacy={() => setView('privacy')}
+            onOpenTerms={() => setView('terms')}
+          />
+        </main>
+      ) : activeTab === 'history' ? (
+        <main className="app">
+          <header>
+            <h1>Search History</h1>
+            <p className="tagline">Your recent price comparisons.</p>
+          </header>
+          <HistoryView
+            history={searchHistory}
+            onRerun={(q) => {
+              setQuery(q);
+              setActiveTab('search');
+              runSearch(q);
+            }}
+            onClear={clearSearchHistory}
+          />
         </main>
       ) : activeTab !== 'search' ? (
         <main className="app">
