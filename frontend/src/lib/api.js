@@ -1,5 +1,26 @@
 export const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8787';
 
+// Sends the ID token Google issued client-side to the backend, which verifies its
+// signature/audience before trusting the email inside it — never trust the JWT's
+// contents without that check, since anyone can hand the frontend a forged one.
+export async function verifyGoogleCredential(credential) {
+  let res;
+  try {
+    res = await fetch(`${API_BASE}/api/auth/google`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ credential }),
+    });
+  } catch {
+    throw new Error(`Can't reach the backend at ${API_BASE}. Is the backend server running?`);
+  }
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(data.error || 'Google sign-in verification failed');
+  }
+  return data;
+}
+
 export async function compareProduct(query, country, coords) {
   let res;
   try {

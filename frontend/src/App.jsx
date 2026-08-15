@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { detectLocation, COUNTRIES } from './lib/geo';
-import { compareProduct, getTrendingDeals, sendBrookMessage } from './lib/api';
+import { compareProduct, getTrendingDeals, sendBrookMessage, verifyGoogleCredential } from './lib/api';
 import { getSpeechRecognition, speak, describeBestDeal } from './lib/voice';
 import { startWakeWordListener, listenOnce } from './lib/wakeword';
 import logoImg from './assets/logo.png';
@@ -182,28 +182,14 @@ function LandingPage({ onStartTrial, onSignIn, theme, onToggleTheme, onOpenPriva
   );
 }
 
-function GoogleIcon() {
-  return (
-    <svg viewBox="0 0 48 48" width="18" height="18">
-      <path
-        fill="#FFC107"
-        d="M43.6 20.5H42V20H24v8h11.3c-1.6 4.6-6 8-11.3 8-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.9 1.2 8 3.1l5.7-5.7C34.5 6 29.5 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.2-.1-2.4-.4-3.5z"
-      />
-      <path
-        fill="#FF3D00"
-        d="M6.3 14.7l6.6 4.8C14.6 15.8 18.9 13 24 13c3.1 0 5.9 1.2 8 3.1l5.7-5.7C34.5 6 29.5 4 24 4c-7.5 0-14 4.2-17.7 10.7z"
-      />
-      <path
-        fill="#4CAF50"
-        d="M24 44c5.4 0 10.3-1.8 14-5.4l-6.5-5.4c-2 1.4-4.6 2.3-7.5 2.3-5.3 0-9.7-3.4-11.3-8L6 32.2C9.6 39.6 16.2 44 24 44z"
-      />
-      <path
-        fill="#1976D2"
-        d="M43.6 20.5H42V20H24v8h11.3c-.8 2.3-2.2 4.2-4.1 5.6l6.5 5.4C41.9 36.4 44 30.8 44 24c0-1.2-.1-2.4-.4-3.5z"
-      />
-    </svg>
-  );
-}
+// Only set locally for now (see frontend/.env.example) — production's Vercel build has
+// no VITE_GOOGLE_CLIENT_ID, so this stays undefined there and the button below just
+// doesn't render, leaving the existing email/password flow as the only option.
+const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID;
+// Module-level, not component state — must survive AuthPage unmounting/remounting
+// (e.g. React StrictMode's dev-only double-invoke, or the user navigating away and
+// back), since Google's library warns if initialize() is ever called more than once.
+let googleSignInInitialized = false;
 
 function AuthPage({ mode, onSwitchMode, onSubmit, onGoogleAuth, onBack, theme, onToggleTheme }) {
   const isSignup = mode === 'signup';
@@ -211,6 +197,71 @@ function AuthPage({ mode, onSwitchMode, onSubmit, onGoogleAuth, onBack, theme, o
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [passwordError, setPasswordError] = useState(null);
+  const [googleError, setGoogleError] = useState(null);
+  const googleBtnRef = useRef(null);
+  // initialize() must only run once — Google's library warns (and behaves
+  // unpredictably) if it's called again, so isSignup toggling the button's text
+  // can't be allowed to re-initialize it, only re-render it.
+  const onGoogleAuthRef = useRef(onGoogleAuth);
+  onGoogleAuthRef.current = onGoogleAuth;
+
+  function renderGoogleButton() {
+    if (!googleBtnRef.current || !window.google?.accounts?.id) return;
+    window.google.accounts.id.renderButton(googleBtnRef.current, {
+      theme: 'outline',
+      size: 'large',
+      width: 320,
+      text: isSignup ? 'signup_with' : 'signin_with',
+    });
+  }
+
+  useEffect(() => {
+    if (!GOOGLE_CLIENT_ID) return;
+    let pollId = null;
+
+    // Registered at most once for the page's whole lifetime (see googleSignInInitialized),
+    // so this closure must route through refs/stable setters rather than a per-effect
+    // "cancelled" flag — a flag here would get poisoned by StrictMode's dev-only
+    // mount->cleanup->remount cycle, permanently disabling the only registered callback.
+    function handleCredential(response) {
+      verifyGoogleCredential(response.credential)
+        .then((data) => onGoogleAuthRef.current(data.email))
+        .catch((err) => setGoogleError(err.message));
+    }
+
+    function init() {
+      if (!googleSignInInitialized) {
+        window.google.accounts.id.initialize({ client_id: GOOGLE_CLIENT_ID, callback: handleCredential });
+        googleSignInInitialized = true;
+      }
+      renderGoogleButton();
+    }
+
+    if (window.google?.accounts?.id) {
+      init();
+    } else {
+      // The GIS script tag loads async — poll briefly in the rare case this effect
+      // runs before it's ready, instead of failing silently.
+      pollId = setInterval(() => {
+        if (window.google?.accounts?.id) {
+          clearInterval(pollId);
+          init();
+        }
+      }, 100);
+    }
+
+    return () => {
+      if (pollId) clearInterval(pollId);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- must run once; isSignup changes are handled below
+  }, []);
+
+  // Re-render (not re-initialize) when the Sign Up/Log In tab changes, so the
+  // button's label switches between "Sign up with Google" / "Sign in with Google".
+  useEffect(() => {
+    renderGoogleButton();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isSignup]);
 
   function handleSubmit(e) {
     if (isSignup && password !== confirmPassword) {
@@ -243,10 +294,12 @@ function AuthPage({ mode, onSwitchMode, onSubmit, onGoogleAuth, onBack, theme, o
             </button>
           </div>
 
-          <button type="button" className="google-auth-btn" onClick={onGoogleAuth}>
-            <GoogleIcon />
-            Continue with Google
-          </button>
+          {GOOGLE_CLIENT_ID && (
+            <>
+              <div className="google-auth-btn-slot" ref={googleBtnRef} />
+              {googleError && <p className="auth-field-error">{googleError}</p>}
+            </>
+          )}
 
           <div className="auth-divider">
             <span>or {isSignup ? 'sign up' : 'log in'} with email</span>
@@ -937,10 +990,10 @@ export default function App() {
     setView('app');
   }
 
-  function handleGoogleAuth() {
-    // Mock OAuth has no real account behind it — every "Google" sign-in shares one
-    // bucket, since there's no real Google identity to key the search limit on.
-    setCurrentUserEmail('google-authenticated-user');
+  function handleGoogleAuth(email) {
+    // email is already verified server-side (backend checked the Google ID token's
+    // signature/audience before returning it) — see AuthPage's handleCredential.
+    setCurrentUserEmail(email.trim().toLowerCase());
     setView('app');
   }
 

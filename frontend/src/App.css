@@ -1327,25 +1327,15 @@ header h1 {
   color: var(--text-h);
 }
 
-.google-auth-btn {
+.google-auth-btn-slot {
   display: flex;
-  align-items: center;
   justify-content: center;
-  gap: 10px;
-  width: 100%;
-  padding: 11px 14px;
-  border-radius: 10px;
-  border: 1px solid var(--glass-border);
-  background: var(--surface);
-  color: var(--text-h);
-  font-weight: 600;
-  font-size: 14px;
-  cursor: pointer;
-  transition: background 0.15s ease;
+  /* Google's rendered button owns its own box (colors/border/hover) per their
+     branding guidelines — this just centers whatever width it renders at. */
 }
 
-.google-auth-btn:hover {
-  background: var(--surface-strong);
+.google-auth-btn-slot > div {
+  max-width: 100%;
 }
 
 .auth-divider {

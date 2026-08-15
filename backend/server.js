@@ -3,6 +3,7 @@ import cors from 'cors';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import Anthropic from '@anthropic-ai/sdk';
+import { OAuth2Client } from 'google-auth-library';
 import 'dotenv/config';
 
 const app = express();
@@ -51,6 +52,9 @@ const anthropic = ANTHROPIC_API_KEY ? new Anthropic({ apiKey: ANTHROPIC_API_KEY 
 // Haiku by default — this is a chatty, high-frequency feature, so cost-per-turn matters.
 // Override with ANTHROPIC_MODEL in .env for higher quality (e.g. claude-sonnet-5).
 const BROOK_MODEL = process.env.ANTHROPIC_MODEL || 'claude-haiku-4-5-20251001';
+
+const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
+const googleClient = GOOGLE_CLIENT_ID ? new OAuth2Client(GOOGLE_CLIENT_ID) : null;
 
 function computeMedian(numbers) {
   if (numbers.length === 0) return null;
@@ -403,6 +407,33 @@ app.get('/api/geocode/search', standardLimiter, async (req, res) => {
   } catch (err) {
     console.error('[geocode/search]', err);
     res.status(502).json({ error: 'Address search failed. Please try again.' });
+  }
+});
+
+// ---------- Auth: verify Google Sign-In ----------
+
+// The frontend never decides who a user is — it hands us the ID token Google issued
+// after the user picked an account, and we verify the signature + audience here before
+// trusting the email inside it. This is local/dev-only for now: GOOGLE_CLIENT_ID is
+// unset in production, so this route 503s there until it's deliberately turned on.
+app.post('/api/auth/google', standardLimiter, async (req, res) => {
+  if (!googleClient) {
+    return res.status(503).json({ error: 'Google sign-in is not configured on this server.' });
+  }
+  const { credential } = req.body || {};
+  if (!credential || typeof credential !== 'string') {
+    return res.status(400).json({ error: 'credential is required' });
+  }
+  try {
+    const ticket = await googleClient.verifyIdToken({ idToken: credential, audience: GOOGLE_CLIENT_ID });
+    const payload = ticket.getPayload();
+    if (!payload?.email || !payload.email_verified) {
+      return res.status(401).json({ error: 'Google account email is not verified.' });
+    }
+    res.json({ email: payload.email.toLowerCase(), name: payload.name || null, picture: payload.picture || null });
+  } catch (err) {
+    console.error('[auth/google]', err);
+    res.status(401).json({ error: 'Could not verify Google sign-in.' });
   }
 });
 
